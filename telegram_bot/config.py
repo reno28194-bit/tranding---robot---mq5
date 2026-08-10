@@ -3,10 +3,10 @@
 # ==========================================
 
 # 🔑 Masukkan Token Bot Telegram Anda di sini
-BOT_TOKEN = "MASUKKAN_TOKEN_BOT_ANDA_DI_SINI"
+BOT_TOKEN = "8215530282:AAFDtDnZFfPu0WFxg1J-GMocxCPTttV1jX4"
 
 # 🆔 Masukkan Chat ID Anda di sini
-CHAT_ID = "MASUKKAN_CHAT_ID_ANDA_DI_SINI"
+CHAT_ID = "8681160703"
 
 # ==========================================
 # KONFIGURASI TRADING
