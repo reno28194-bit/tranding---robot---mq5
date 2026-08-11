@@ -3,10 +3,10 @@
 # ==========================================
 
 # 🔑 Masukkan Token Bot Telegram Anda di sini
-BOT_TOKEN = "8215530282:AAFDtDnZFfPu0WFxg1J-GMocxCPTttV1jX4"
+BOT_TOKEN = "RAHASIA"
 
 # 🆔 Masukkan Chat ID Anda di sini
-CHAT_ID = "8681160703"
+CHAT_ID = "RAHASIA"
 
 # ==========================================
 # KONFIGURASI TRADING
