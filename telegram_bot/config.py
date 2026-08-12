@@ -1,24 +1,19 @@
+import os
+
 # ==========================================
 # KONFIGURASI BOT TELEGRAM
 # ==========================================
 
-# 🔑 Masukkan Token Bot Telegram Anda di sini
-BOT_TOKEN = "RAHASIA"
-
-# 🆔 Masukkan Chat ID Anda di sini
-CHAT_ID = "RAHASIA"
+# Ambil dari environment variable (GitHub Secrets), fallback ke manual jika kosong
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "MASUKKAN_TOKEN_DISINI")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "MASUKKAN_CHAT_ID_DISINI")
 
 # ==========================================
 # KONFIGURASI TRADING
 # ==========================================
 
-# Default symbol untuk trading
 DEFAULT_SYMBOL = "EURUSD"
-
-# Timeframe default
 DEFAULT_TIMEFRAME = "M15"
-
-# Database file untuk menyimpan riwayat sinyal
 SIGNAL_HISTORY_FILE = "signals_history.json"
 
 # ==========================================
@@ -26,13 +21,11 @@ SIGNAL_HISTORY_FILE = "signals_history.json"
 # ==========================================
 
 TELEGRAM_API_URL = "https://api.telegram.org"
+TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY", "")
 
 # ==========================================
 # NOTIFIKASI SETTINGS
 # ==========================================
 
-# Enable/Disable notifikasi
 ENABLE_NOTIFICATIONS = True
-
-# Parse mode untuk formatting Telegram
 PARSE_MODE = "HTML"
