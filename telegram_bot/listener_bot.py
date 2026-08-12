@@ -1,10 +1,16 @@
 import os
+import asyncio
 import requests
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY")
+
+WATCHLIST = ["XAU/USD", "EUR/USD", "BTC/USD", "NDX", "GBP/USD", "USD/JPY"]
+CHECK_INTERVAL_SECONDS = 30 * 60  # 30 menit
+last_signal = {}
 
 def get_price_data(symbol, interval="15min", outputsize=50):
     url = "https://api.twelvedata.com/time_series"
@@ -58,7 +64,7 @@ def calculate_atr(highs, lows, closes, period=14):
 def analyze(symbol):
     result = get_price_data(symbol)
     if result is None:
-        return f"❌ Gagal ambil data {symbol}. Cek nama symbol."
+        return None, f"❌ Gagal ambil data {symbol}."
     closes, highs, lows = result
     price = closes[-1]
     ma = calculate_sma(closes, 20)
@@ -66,7 +72,7 @@ def analyze(symbol):
     stoch = calculate_stochastic(closes, highs, lows, 14)
     atr = calculate_atr(highs, lows, closes, 14)
     if None in (ma, rsi, stoch, atr):
-        return f"❌ Data tidak cukup untuk {symbol}."
+        return None, f"❌ Data tidak cukup untuk {symbol}."
 
     signal = "WAIT"
     if price > ma and rsi < 40:
@@ -82,15 +88,21 @@ def analyze(symbol):
         sl = tp = None
         emoji = "⚪"
 
-    msg = f"{emoji} <b>{signal} - {symbol.upper()}</b>\n\n"
+    msg = f"{emoji} <b>{signal} - {symbol}</b>\n\n"
     msg += f"Harga: <code>{price:.5f}</code>\nMA(20): <code>{ma:.5f}</code>\n"
     msg += f"RSI(14): <code>{rsi:.2f}</code>\nStochastic: <code>{stoch:.2f}</code>\n"
     if signal != "WAIT":
         msg += f"\n📍 Entry: <code>{price:.5f}</code>\n🛑 SL: <code>{sl:.5f}</code>\n🎯 TP: <code>{tp:.5f}</code>\n"
-    else:
-        msg += "\n⏳ Belum ada sinyal jelas, tunggu momentum."
-    msg += "\n⚠️ Bukan saran finansial. Lakukan analisa tambahan."
-    return msg
+    msg += "\n⚠️ Bukan saran finansial."
+    return signal, msg
+
+async def auto_scan(context: ContextTypes.DEFAULT_TYPE):
+    for symbol in WATCHLIST:
+        signal, msg = analyze(symbol)
+        if signal in ("BUY", "SELL") and last_signal.get(symbol) != signal:
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="HTML")
+        last_signal[symbol] = signal
+        await asyncio.sleep(2)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower().strip()
@@ -102,17 +114,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         symbol = parts[1].upper()
         if symbol == "XAUUSD":
             symbol = "XAU/USD"
+        elif symbol == "BTCUSD":
+            symbol = "BTC/USD"
+        elif symbol == "NASDAQ":
+            symbol = "NDX"
         elif len(symbol) == 6:
             symbol = symbol[:3] + "/" + symbol[3:]
         await update.message.reply_text("🔍 Menganalisa, tunggu sebentar...")
-        await update.message.reply_text(analyze(symbol), parse_mode="HTML")
+        _, msg = analyze(symbol)
+        await update.message.reply_text(msg, parse_mode="HTML")
     elif text == "/start":
-        await update.message.reply_text("🤖 Bot Analisa Trading Aktif!\n\nKetik: analisa <symbol>\nContoh: analisa xauusd")
+        await update.message.reply_text(
+            "🤖 Bot Analisa Trading Aktif!\n\n"
+            "Ketik: analisa <symbol>\nContoh: analisa xauusd\n\n"
+            "📡 Auto-scan aktif tiap 30 menit untuk:\nXAUUSD, EURUSD, BTCUSD, NASDAQ, GBPUSD, USDJPY"
+        )
 
 def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
-    print("Bot berjalan...")
+    app.job_queue.run_repeating(auto_scan, interval=CHECK_INTERVAL_SECONDS, first=10)
+    print("Bot berjalan dengan auto-scan tiap 30 menit...")
     app.run_polling()
 
 if __name__ == "__main__":
