@@ -1,7 +1,10 @@
 # telegram_bot/news_signal.py
+import os
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
+
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 FF_JSON_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 FF_CALENDAR_PAGE = "https://www.forexfactory.com/calendar"
@@ -9,8 +12,6 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 WATCHED_CURRENCIES = ["USD", "EUR", "GBP", "JPY"]
 
-# currency -> pair yang dipengaruhi, dan arah "sama" (True) atau "kebalikan" (False)
-# True = kalau currency menguat, pair ini naik. False = kalau currency menguat, pair ini turun.
 CURRENCY_MAP = {
     "USD": [("XAUUSD", False), ("EURUSD", False), ("GBPUSD", False), ("USDJPY", True)],
     "EUR": [("EURUSD", True)],
@@ -18,8 +19,7 @@ CURRENCY_MAP = {
     "JPY": [("USDJPY", False)],
 }
 
-# indikator yang sifatnya kebalikan: actual lebih RENDAH dari forecast = currency menguat
-INVERSE_KEYWORDS = ["unemployment", "jobless", "claims", "cpi" ]  # cpi sengaja masuk contoh ambigu, lihat catatan di bawah
+INVERSE_KEYWORDS = ["unemployment", "jobless", "claims"]
 
 processed_events = set()
 
@@ -32,7 +32,6 @@ def _to_float(v):
 
 
 def fetch_today_schedule():
-    """Ambil jadwal event high-impact hari ini (1x panggil per hari)."""
     resp = requests.get(FF_JSON_URL, headers=HEADERS, timeout=15)
     resp.raise_for_status()
     data = resp.json()
@@ -62,7 +61,6 @@ def fetch_today_schedule():
 
 
 def scrape_actual(event):
-    """Cari nilai 'actual' event tertentu di halaman kalender FF."""
     resp = requests.get(FF_CALENDAR_PAGE, headers=HEADERS, timeout=15)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
@@ -91,7 +89,7 @@ def interpret(event, actual):
 
     is_inverse = any(k in event["title"].lower() for k in INVERSE_KEYWORDS)
     if actual == forecast:
-        return None  # sesuai ekspektasi, tidak ada kejutan -> skip
+        return None
 
     surprised_up = actual > forecast
     currency_stronger = (not surprised_up) if is_inverse else surprised_up
@@ -116,7 +114,6 @@ def build_message(event, actual, signals):
 
 
 async def news_scan_job(context):
-    """Dipanggil tiap 5 menit lewat job_queue."""
     schedule = context.bot_data.get("news_schedule", [])
     now = datetime.now(timezone.utc)
 
@@ -126,21 +123,20 @@ async def news_scan_job(context):
         if now < event["time"].astimezone(timezone.utc):
             continue
         if now > event["time"].astimezone(timezone.utc) + timedelta(minutes=20):
-            processed_events.add(event["id"])  # kadaluarsa, lewati
+            processed_events.add(event["id"])
             continue
 
         actual = scrape_actual(event)
         if actual is None:
-            continue  # belum rilis, coba lagi 5 menit berikutnya
+            continue
 
         processed_events.add(event["id"])
         signals = interpret(event, actual)
         if signals:
             msg = build_message(event, actual, signals)
-            await context.bot.send_message(chat_id=context.job.chat_id, text=msg)
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
 
 
 async def refresh_schedule_job(context):
-    """Dipanggil 1x sehari untuk ambil jadwal event hari ini."""
     context.bot_data["news_schedule"] = fetch_today_schedule()
     processed_events.clear()
