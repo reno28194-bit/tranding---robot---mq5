@@ -10,6 +10,7 @@ from news_signal import news_scan_job, refresh_schedule_job
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 TWELVE_DATA_API_KEY = os.environ.get("TWELVE_DATA_API_KEY")
+ADMIN_USER_ID = int(os.environ.get("ADMIN_USER_ID", 0)) or None
 
 # --- Opsional: isi ini di Railway Variables kalau mau hitung lot otomatis ---
 ACCOUNT_BALANCE = float(os.environ.get("ACCOUNT_BALANCE", 0))  # contoh: 100 (USD)
@@ -19,6 +20,8 @@ WATCHLIST = ["XAU/USD", "EUR/USD", "BTC/USD", "NDX", "GBP/USD", "USD/JPY"]
 CHECK_INTERVAL_SECONDS = 15 * 60       # scan sinyal baru tiap 15 menit
 MONITOR_INTERVAL_SECONDS = 5 * 60      # cek sinyal aktif (TP/SL) tiap 5 menit
 SIGNAL_COOLDOWN_MINUTES = 120          # jeda minimal antar sinyal per simbol
+
+FREE_LIMIT = 1  # jatah gratis analisa manual untuk non-admin
 
 DATA_FILE = "/tmp/bot_data.json"
 
@@ -34,7 +37,7 @@ def load_data():
                 return json.load(f)
         except Exception:
             pass
-    return {"active_signals": [], "stats": {"win": 0, "loss": 0}}
+    return {"active_signals": [], "stats": {"win": 0, "loss": 0}, "free_usage": {}}
 
 
 def save_data(data):
@@ -43,6 +46,23 @@ def save_data(data):
             json.dump(data, f)
     except Exception as e:
         print(f"Gagal simpan data: {e}")
+
+
+# ============ AKSES GRATIS / ADMIN ============
+
+def can_use_free_analisa(user_id, data):
+    if ADMIN_USER_ID and user_id == ADMIN_USER_ID:
+        return True
+    usage = data.setdefault("free_usage", {})
+    return usage.get(str(user_id), 0) < FREE_LIMIT
+
+
+def register_usage(user_id, data):
+    if ADMIN_USER_ID and user_id == ADMIN_USER_ID:
+        return
+    usage = data.setdefault("free_usage", {})
+    usage[str(user_id)] = usage.get(str(user_id), 0) + 1
+    save_data(data)
 
 
 # ============ AMBIL DATA HARGA (dengan retry) ============
@@ -369,6 +389,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- Analisa manual ---
     if text.startswith("analisa"):
+        user_id = update.effective_user.id
+        data = load_data()
+
+        if not can_use_free_analisa(user_id, data):
+            await update.message.reply_text(
+                "🔒 Jatah analisa gratis kamu sudah habis.\n\n"
+                "⚡ Aktivasi Pro untuk analisa tanpa batas:\n"
+                "💰 Minggu pertama: Rp20.000\n"
+                "💰 Minggu kedua dst: Rp50.000/minggu\n\n"
+                "Hubungi admin: @Renoanalisa",
+                reply_markup=main_menu()
+            )
+            return
+
         parts = text.split()
         if len(parts) < 2:
             await update.message.reply_text("Format: analisa <symbol>\nContoh: analisa xauusd")
@@ -385,6 +419,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔍 Menganalisa (cek tren H1 + entry M15), tunggu sebentar...")
         _, msg, _ = analyze(symbol)
         await update.message.reply_text(msg, parse_mode="HTML")
+
+        register_usage(user_id, data)
     elif text == "/start":
         await update.message.reply_text(
             "🤖 Bot Analisa Trading Aktif!\n\n"
