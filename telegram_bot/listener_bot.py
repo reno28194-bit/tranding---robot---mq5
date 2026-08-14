@@ -5,6 +5,7 @@ import requests
 from datetime import datetime, timedelta, time as dtime
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
+from news_signal import news_scan_job, refresh_schedule_job
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -368,7 +369,11 @@ def main():
     app.job_queue.run_repeating(monitor_signals, interval=MONITOR_INTERVAL_SECONDS, first=30)
     app.job_queue.run_daily(health_check, time=dtime(hour=8, minute=0))
 
-    print("Bot berjalan: auto-scan 15 menit, monitor TP/SL 5 menit, health check harian jam 08:00...")
+    # --- NEWS SIGNAL: jadwal event 1x sehari + cek actual tiap 5 menit ---
+    app.job_queue.run_daily(refresh_schedule_job, time=dtime(hour=0, minute=5))
+    app.job_queue.run_repeating(news_scan_job, interval=300, first=60)
+
+    print("Bot berjalan: auto-scan 15 menit, monitor TP/SL 5 menit, health check harian jam 08:00, news signal aktif...")
     app.run_polling()
 
 
