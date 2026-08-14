@@ -3,7 +3,7 @@ import json
 import asyncio
 import requests
 from datetime import datetime, timedelta, time as dtime
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 from news_signal import news_scan_job, refresh_schedule_job
 
@@ -310,10 +310,64 @@ async def health_check(context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ============ MENU KEYBOARD ============
+
+def main_menu():
+    keyboard = [
+        ["📊 Analisa", "⚡ Aktivasi Pro"],
+        ["📈 Dashboard", "🤝 Partnership"],
+        ["📋 Riwayat Analisa", "📞 Hubungi Admin"],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
 # ============ HANDLER PESAN ============
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.lower().strip()
+    raw_text = update.message.text.strip()
+    text = raw_text.lower()
+
+    # --- Menu keyboard ---
+    if raw_text in ["📊 Analisa"]:
+        await update.message.reply_text(
+            "Ketik: analisa <symbol>\nContoh: analisa xauusd",
+            reply_markup=main_menu()
+        )
+        return
+    elif raw_text in ["⚡ Aktivasi Pro"]:
+        await update.message.reply_text(
+            "⚡ <b>Aktivasi Pro</b>\n\n"
+            "💰 Minggu pertama: Rp20.000\n"
+            "💰 Minggu kedua dan seterusnya: Rp50.000/minggu\n\n"
+            "Hubungi admin untuk aktivasi: @Renoanalisa",
+            parse_mode="HTML",
+            reply_markup=main_menu()
+        )
+        return
+    elif raw_text in ["📈 Dashboard"]:
+        await stats_command(update, context)
+        return
+    elif raw_text in ["🤝 Partnership"]:
+        # TODO: isi detail program partnership di sini nanti
+        await update.message.reply_text(
+            "🤝 Untuk kerja sama/partnership, silakan hubungi admin.",
+            reply_markup=main_menu()
+        )
+        return
+    elif raw_text in ["📋 Riwayat Analisa"]:
+        await stats_command(update, context)
+        return
+    elif raw_text in ["📞 Hubungi Admin"]:
+        await update.message.reply_text(
+            "📞 Hubungi admin: @Renoanalisa",
+            reply_markup=main_menu()
+        )
+        return
+    elif text in ["menu", "menu utama", "/menu"]:
+        await update.message.reply_text("🏠 Menu Utama", reply_markup=main_menu())
+        return
+
+    # --- Analisa manual ---
     if text.startswith("analisa"):
         parts = text.split()
         if len(parts) < 2:
@@ -337,7 +391,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Ketik: analisa <symbol>\nContoh: analisa xauusd\n\n"
             "📡 Auto-scan tiap 15 menit untuk:\nXAUUSD, EURUSD, BTCUSD, NASDAQ, GBPUSD, USDJPY\n\n"
             "Sinyal pakai konfirmasi tren H1 + RSI + Stochastic, dengan cooldown 2 jam per simbol.\n\n"
-            "Ketik /stats untuk lihat performa sinyal."
+            "Ketik /stats untuk lihat performa sinyal, atau pilih menu di bawah 👇",
+            reply_markup=main_menu()
         )
 
 
@@ -373,7 +428,7 @@ def main():
     app.job_queue.run_daily(refresh_schedule_job, time=dtime(hour=0, minute=5))
     app.job_queue.run_repeating(news_scan_job, interval=300, first=60)
 
-    print("Bot berjalan: auto-scan 15 menit, monitor TP/SL 5 menit, health check harian jam 08:00, news signal aktif...")
+    print("Bot berjalan: auto-scan 15 menit, monitor TP/SL 5 menit, health check harian jam 08:00, news signal aktif, menu keyboard aktif...")
     app.run_polling()
 
 
