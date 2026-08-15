@@ -27,6 +27,21 @@ DATA_FILE = "/tmp/bot_data.json"
 
 last_signal = {}
 
+# Simbol crypto trading 24/7, dikecualikan dari pengecekan jam market forex
+CRYPTO_SYMBOLS = ["BTC/USD"]
+
+
+def is_market_open(symbol=None):
+    """
+    Cek apakah market forex sedang buka.
+    Crypto (BTC/USD dll) selalu dianggap buka karena trading 24/7.
+    Forex tutup Sabtu & Minggu (UTC).
+    """
+    if symbol and symbol.upper() in CRYPTO_SYMBOLS:
+        return True
+    weekday = datetime.utcnow().weekday()  # Senin=0 ... Minggu=6
+    return weekday not in (5, 6)
+
 
 # ============ PENYIMPANAN DATA (histori & sinyal aktif) ============
 
@@ -244,6 +259,9 @@ async def auto_scan(context: ContextTypes.DEFAULT_TYPE):
     now = datetime.utcnow()
 
     for symbol in WATCHLIST:
+        if not is_market_open(symbol):
+            continue
+
         signal, msg, trade_info = analyze(symbol)
         if signal is None:
             continue
@@ -416,6 +434,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             symbol = "NDX"
         elif len(symbol) == 6:
             symbol = symbol[:3] + "/" + symbol[3:]
+
+        if not is_market_open(symbol):
+            await update.message.reply_text(
+                "⚠️ Market forex sedang tutup (Sabtu/Minggu). "
+                "Sinyal di bawah berdasarkan data terakhir sebelum tutup, bukan real-time:\n"
+            )
+
         await update.message.reply_text("🔍 Menganalisa (cek tren H1 + entry M15), tunggu sebentar...")
         _, msg, _ = analyze(symbol)
         await update.message.reply_text(msg, parse_mode="HTML")
