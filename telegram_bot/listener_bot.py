@@ -485,7 +485,9 @@ def main():
     app.job_queue.run_repeating(monitor_signals, interval=MONITOR_INTERVAL_SECONDS, first=30)
     app.job_queue.run_daily(health_check, time=dtime(hour=8, minute=0))
 
-    # --- NEWS SIGNAL: jadwal event 1x sehari + cek actual tiap 5 menit ---
+    # --- NEWS SIGNAL: jadwal event langsung diambil 10 detik setelah start, ---
+    # --- lalu di-refresh ulang tiap hari jam 00:05 UTC. Cek actual tiap 5 menit. ---
+    app.job_queue.run_once(refresh_schedule_job, when=10)
     app.job_queue.run_daily(refresh_schedule_job, time=dtime(hour=0, minute=5))
     app.job_queue.run_repeating(news_scan_job, interval=300, first=60)
 
