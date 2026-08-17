@@ -32,9 +32,13 @@ def _to_float(v):
 
 
 def fetch_today_schedule():
-    resp = requests.get(FF_JSON_URL, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        resp = requests.get(FF_JSON_URL, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        print(f"[news_signal] Gagal ambil jadwal event (fetch_today_schedule): {e}")
+        return []
 
     today = datetime.now(timezone.utc).date()
     events = []
@@ -57,15 +61,27 @@ def fetch_today_schedule():
             "forecast": _to_float(e.get("forecast")),
             "previous": _to_float(e.get("previous")),
         })
+
+    print(f"[news_signal] Jadwal hari ini: {len(events)} event high-impact ditemukan "
+          f"({', '.join(ev['title'] for ev in events) if events else '-'})")
     return events
 
 
 def scrape_actual(event):
-    resp = requests.get(FF_CALENDAR_PAGE, headers=HEADERS, timeout=15)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    try:
+        resp = requests.get(FF_CALENDAR_PAGE, headers=HEADERS, timeout=15)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"[news_signal] Gagal load halaman kalender FF untuk '{event['title']}': {e}")
+        return None
 
+    soup = BeautifulSoup(resp.text, "html.parser")
     rows = soup.select("tr.calendar__row")
+    if not rows:
+        print("[news_signal] Peringatan: 0 baris kalender ditemukan di halaman FF "
+              "(kemungkinan diblokir/struktur HTML berubah)")
+        return None
+
     for row in rows:
         title_el = row.select_one(".calendar__event")
         currency_el = row.select_one(".calendar__currency")
@@ -79,6 +95,9 @@ def scrape_actual(event):
         actual_text = actual_el.get_text(strip=True)
         if actual_text:
             return _to_float(actual_text)
+
+    print(f"[news_signal] Belum ketemu actual untuk '{event['title']}' ({event['currency']}) — "
+          f"kemungkinan belum rilis atau judul tidak match persis")
     return None
 
 
@@ -115,6 +134,10 @@ def build_message(event, actual, signals):
 
 async def news_scan_job(context):
     schedule = context.bot_data.get("news_schedule", [])
+    if not schedule:
+        # Tidak print tiap 5 menit biar log tidak banjir; cukup diam kalau memang kosong
+        return
+
     now = datetime.now(timezone.utc)
 
     for event in schedule:
@@ -124,9 +147,15 @@ async def news_scan_job(context):
             continue
         if now > event["time"].astimezone(timezone.utc) + timedelta(minutes=20):
             processed_events.add(event["id"])
+            print(f"[news_signal] Lewat 20 menit tanpa actual, skip: {event['title']}")
             continue
 
-        actual = scrape_actual(event)
+        try:
+            actual = scrape_actual(event)
+        except Exception as e:
+            print(f"[news_signal] Error saat scrape_actual untuk '{event['title']}': {e}")
+            continue
+
         if actual is None:
             continue
 
@@ -134,9 +163,20 @@ async def news_scan_job(context):
         signals = interpret(event, actual)
         if signals:
             msg = build_message(event, actual, signals)
-            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+            try:
+                await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+                print(f"[news_signal] Terkirim: {event['title']} actual={actual}")
+            except Exception as e:
+                print(f"[news_signal] Gagal kirim pesan Telegram: {e}")
+        else:
+            print(f"[news_signal] '{event['title']}' actual={actual} sama dengan forecast "
+                  f"atau tidak bisa diinterpretasi, tidak ada sinyal")
 
 
 async def refresh_schedule_job(context):
-    context.bot_data["news_schedule"] = fetch_today_schedule()
-    processed_events.clear()
+    try:
+        context.bot_data["news_schedule"] = fetch_today_schedule()
+        processed_events.clear()
+    except Exception as e:
+        print(f"[news_signal] Error di refresh_schedule_job: {e}")
+        context.bot_data.setdefault("news_schedule", [])
